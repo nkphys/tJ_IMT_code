@@ -21,6 +21,7 @@ public:
     double t_hopping;
 
     bool Simple_Mixing;
+    bool Broyden_Mixing;
     double alpha_n, alpha_Sz, alpha_Sx, alpha_Sy;
 
     double temp,beta,Eav,maxmoment;
@@ -38,7 +39,7 @@ void Parameters::Initialize(string inputfile_){
 
     t_hopping=1.0;
 
-    double Simple_Mixing_double;
+    double Simple_Mixing_double, Broyden_Mixing_double;
     double Read_OPs_double;
 
     cout << "____________________________________" << endl;
@@ -76,11 +77,20 @@ void Parameters::Initialize(string inputfile_){
     Dflag = 'N';
 
     Simple_Mixing_double=double(matchstring(inputfile_,"Simple_Mixing"));
-    if(Simple_Mixing_double==1.0){
+    Broyden_Mixing_double=double(matchstring(inputfile_,"Broyden_Mixing"));
+
+    if(Broyden_Mixing_double==1.0){
+        Broyden_Mixing=true;
+        Simple_Mixing=false;
+
+    }
+    else if(Broyden_Mixing_double==0.0){
+        Broyden_Mixing=false;
         Simple_Mixing=true;
     }
     else{
-        Simple_Mixing=false;
+        cout<<"Broyden_Mixing should be either 0(false) or 1(true)"<<endl;
+        assert((Broyden_Mixing_double==0.0) || (Broyden_Mixing_double==1.0));
     }
 
 

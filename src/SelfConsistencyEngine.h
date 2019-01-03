@@ -139,7 +139,8 @@ void SelfConsistencyEngine::RUN_SelfConsistencyEngine(){
                                Parameters_.mus<<setw(17)<<
                                Curr_ClassicalE<<setw(17)<<Curr_QuantE<<endl;
 
-            Observables_.Update_OrderParameters();
+            Observables_.Update_OrderParameters(count);
+
 
         }
 

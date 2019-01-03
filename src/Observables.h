@@ -38,7 +38,7 @@ public:
     void Calculate_Local_Density();
     void Calculate_Local_Szxy();
     void Get_OrderParameters_diffs();
-    void Update_OrderParameters();
+    void Update_OrderParameters(int iter);
 
     double Omega(int i);
 
@@ -57,7 +57,7 @@ public:
     Matrix<double> SiSj_,dos;
     vector<double> sx_,sy_,sz_;
 
-    // Define Fields
+    // Declare Fields
     Matrix<double> Sz_obs, Sx_obs, Sy_obs;
     Matrix<double> Local_density_obs;
     double Error_Sz_;
@@ -66,6 +66,17 @@ public:
     double Error_Local_n_;
 
     double AVG_Total_Energy, AVG_Total_Energy_sqr;
+
+
+    //Declare Broyden_Mixing vectors
+    vector<double> F_n; //F_n=x_n_out - x_n_in []
+    vector<double> F_nm1;
+    vector<double> DeltaF_n; //DeltaF_n=F_n - F-nm1;
+    vector<double> Delta_x_n; //Delta_x_n= x_n_in - x_nm1_in;
+    Mat_2_doub Jinv_n;
+    Mat_2_doub Jinv_np1;
+
+
 };
 /*
  * ***********
@@ -96,7 +107,8 @@ void Observables::Get_OrderParameters_diffs(){
 
 }
 
-void Observables::Update_OrderParameters(){
+void Observables::Update_OrderParameters(int iter){
+
 
     //Simple mixing
     double alpha_n=Parameters_.alpha_n;
@@ -104,16 +116,209 @@ void Observables::Update_OrderParameters(){
     double alpha_Sx=Parameters_.alpha_Sx;
     double alpha_Sy=Parameters_.alpha_Sy;
 
-    for(int i=0;i<lx_;i++){
-        for(int j=0;j<ly_;j++){
 
-            MFParams_.Local_density(i,j) = (1-alpha_n)*MFParams_.Local_density(i,j)  + alpha_n*Local_density_obs(i,j);
+    if(Parameters_.Simple_Mixing==true){
 
-            MFParams_.Sz(i,j) = (1-alpha_Sz)*MFParams_.Sz(i,j)  + alpha_Sz*Sz_obs(i,j);
-            MFParams_.Sx(i,j) = (1-alpha_Sx)*MFParams_.Sx(i,j)  + alpha_Sx*Sx_obs(i,j);
-            MFParams_.Sy(i,j) = (1-alpha_Sy)*MFParams_.Sy(i,j)  + alpha_Sy*Sy_obs(i,j);
+        if(iter==0){
+            cout<<"Using Simple Mixing to gain Self-Consistency"<<endl;
+        }
 
-        }}
+        for(int i=0;i<lx_;i++){
+            for(int j=0;j<ly_;j++){
+
+                MFParams_.Local_density(i,j) = (1-alpha_n)*MFParams_.Local_density(i,j)  + alpha_n*Local_density_obs(i,j);
+
+                MFParams_.Sz(i,j) = (1-alpha_Sz)*MFParams_.Sz(i,j)  + alpha_Sz*Sz_obs(i,j);
+                MFParams_.Sx(i,j) = (1-alpha_Sx)*MFParams_.Sx(i,j)  + alpha_Sx*Sx_obs(i,j);
+                MFParams_.Sy(i,j) = (1-alpha_Sy)*MFParams_.Sy(i,j)  + alpha_Sy*Sy_obs(i,j);
+
+            }}
+
+    }
+
+    /*
+    vector<double> F_n; //F_n=x_n_out - x_n_in []
+    vector<double> F_nm1;
+    vector<double> DeltaF_n; //DeltaF_n=F_n - F-nm1;
+    vector<double> Delta_x_n; //Delta_x_n= x_n_in - x_nm1_in;
+    Mat_2_doub Jinv_n;
+    Mat_2_doub Jinv_np1;
+     */
+
+    vector<double> vec_V, vec_U;
+    double Denominator_;
+    vector<double> vec_L;
+    int site;
+
+
+    if(Parameters_.Broyden_Mixing==true){
+        if(iter==0){
+            cout<<"Using Broyden Mixing to gain Self-Consistency"<<endl;
+
+            //Get Jinv_np1
+            for(int i=0;i<4*ns_;i++){
+                for(int j=0;j<4*ns_;j++){
+                    if(i==j){
+                        Jinv_np1[i][j]=-1.0*alpha_n;
+                    }
+                    else{
+                        Jinv_np1[i][j]==0.0;
+                    }
+                }}
+
+            //Get F_n
+            for(int i=0;i<lx_;i++){
+                for(int j=0;j<lx_;j++){
+                    site=Coordinates_.Nc(i,j);
+
+                    F_n[site]=Local_density_obs(i,j) - MFParams_.Local_density(i,j);
+                    F_n[site + ns_]=Sz_obs(i,j) - MFParams_.Sz(i,j);
+                    F_n[site + (2*ns_)]=Sx_obs(i,j) - MFParams_.Sx(i,j);
+                    F_n[site + (3*ns_)]=Sy_obs(i,j) - MFParams_.Sy(i,j);
+
+                }
+            }
+
+            for(int i=0;i<4*ns_;i++){
+                Delta_x_n[i] =0.0;
+                for(int j=0;j<4*ns_;j++){
+                    Delta_x_n[i] +=  -1.0*Jinv_np1[i][j]*F_n[j];
+                }
+            }
+
+
+
+            for(int i=0;i<lx_;i++){
+                for(int j=0;j<ly_;j++){
+                    site=Coordinates_.Nc(i,j);
+                    MFParams_.Local_density(i,j) +=  Delta_x_n[site];
+                    MFParams_.Sz(i,j) += Delta_x_n[site+ns_];
+                    MFParams_.Sx(i,j) += Delta_x_n[site+(2*ns_)];
+                    MFParams_.Sy(i,j) += Delta_x_n[site+(3*ns_)];
+                }
+            }
+
+            //Copy Jinv_np1 to Jinv_n
+            Jinv_n = Jinv_np1;
+
+            //Copy F_n to F_nm1
+            F_nm1=F_n;
+
+
+        }
+
+        else{
+            //Get F_n
+            for(int i=0;i<lx_;i++){
+                for(int j=0;j<lx_;j++){
+                    site=Coordinates_.Nc(i,j);
+
+                    F_n[site]=Local_density_obs(i,j) - MFParams_.Local_density(i,j);
+                    F_n[site + ns_]=Sz_obs(i,j) - MFParams_.Sz(i,j);
+                    F_n[site + (2*ns_)]=Sx_obs(i,j) - MFParams_.Sx(i,j);
+                    F_n[site + (3*ns_)]=Sy_obs(i,j) - MFParams_.Sy(i,j);
+
+                }
+            }
+
+            //Get DeltaF_n
+            for (int i=0;i<4*ns_;i++){
+                DeltaF_n[i] = F_n[i] - F_nm1[i];
+            }
+
+            //Get vec_V = Jinv_n*DeltaF_n
+            vec_V.clear();
+            vec_V.resize(4*ns_);
+
+            for(int i=0;i<4*ns_;i++){
+                vec_V[i] =0.0;
+                for(int j=0;j<4*ns_;j++){
+            vec_V[i] += Jinv_n[i][j]*DeltaF_n[j];
+                }
+            }
+
+            //Get vec_U = Delta_x_n^dagg*Jinv_n
+            vec_U.clear();
+            vec_U.resize(4*ns_);
+
+            for(int i=0;i<4*ns_;i++){
+                vec_U[i] =0.0;
+                for(int j=0;j<4*ns_;j++){
+            vec_U[i] += Delta_x_n[j]*Jinv_n[j][i];
+                }
+            }
+
+            // Get Denominator_=<Delta_x_n|vec_V>
+            Denominator_=0.0;
+            for(int i=0;i<4*ns_;i++){
+            Denominator_ +=Delta_x_n[i]*vec_V[i];
+            }
+
+
+            //Get vec_L=  Delta_x_n - vec_V;
+            vec_L.clear();
+            vec_L.resize(4*ns_);
+            for(int i=0;i<4*ns_;i++){
+                vec_L[i] = Delta_x_n[i] - vec_V[i];
+            }
+
+
+            //Get Mat_Temp [Remember to clear later on];
+            Mat_2_doub Mat_Temp;
+            Mat_Temp.resize(4*ns_);
+            for(int i=0;i<4*ns_;i++){
+               Mat_Temp[i].resize(4*ns_);
+               for(int j=0;j<4*ns_;j++){
+                Mat_Temp[i][j] = (vec_L[i]*vec_U[j])/(Denominator_);
+               }
+            }
+
+
+            //Get Jinv_np1
+            for(int i=0;i<4*ns_;i++){
+               for(int j=0;j<4*ns_;j++){
+               Jinv_np1[i][j]  = Jinv_n[i][j]  + Mat_Temp[i][j];
+               }
+            }
+
+
+
+            for(int i=0;i<4*ns_;i++){
+                Delta_x_n[i] =0.0;
+                for(int j=0;j<4*ns_;j++){
+                    Delta_x_n[i] +=  -1.0*Jinv_np1[i][j]*F_n[j];
+                }
+            }
+
+
+
+            for(int i=0;i<lx_;i++){
+                for(int j=0;j<ly_;j++){
+                    site=Coordinates_.Nc(i,j);
+                    MFParams_.Local_density(i,j) +=  Delta_x_n[site];
+                    MFParams_.Sz(i,j) += Delta_x_n[site+ns_];
+                    MFParams_.Sx(i,j) += Delta_x_n[site+(2*ns_)];
+                    MFParams_.Sy(i,j) += Delta_x_n[site+(3*ns_)];
+                }
+            }
+
+            //Copy Jinv_np1 to Jinv_n
+            Jinv_n = Jinv_np1;
+
+            //Copy F_n to F_nm1
+            F_nm1=F_n;
+
+
+            //Clear Mat_Temp
+            for(int i=0;i<4*ns_;i++){
+                Mat_Temp[i].clear();
+            }
+            Mat_Temp.clear();
+
+        }
+
+
+    }
 
 }
 
@@ -494,6 +699,19 @@ void Observables::Initialize(){
     sx_.resize(space);
     sy_.resize(space);
     sz_.resize(space);
+
+
+    F_n.resize(ns_*4); //F_n=x_n_out - x_n_in []
+    F_nm1.resize(ns_*4);
+    DeltaF_n.resize(ns_*4); //DeltaF_n=F_n - F-nm1;
+    Delta_x_n.resize(ns_*4); //Delta_x_n= x_n_in - x_nm1_in;
+    Jinv_n.resize(ns_*4);
+    Jinv_np1.resize(ns_*4);
+
+    for(int i=0;i<ns_*4;i++){
+        Jinv_n[i]. resize(ns_*4);
+        Jinv_np1[i]. resize(ns_*4);
+    }
 
 
 } // ----------
