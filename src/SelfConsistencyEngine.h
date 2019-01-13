@@ -50,7 +50,7 @@ void SelfConsistencyEngine::RUN_SelfConsistencyEngine(){
     double Curr_ClassicalE;
     double Prev_ClassicalE;
 
-    double temp_=0.0001;
+    double temp_=0.000001;
     cout << "Temperature = " << temp_<<" is being done"<<endl;
     Parameters_.temp=temp_;
     Parameters_.beta=double(11604.0/temp_);

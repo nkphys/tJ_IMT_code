@@ -80,6 +80,9 @@ int main(int argc, char *argv[]) {
         Observables_.Calculate_Nw();
 
         Observables_.Calculate_IPR();
+        //Observables_.Calculate_SpinSpincorrelations();
+        Observables_.Calculate_SpinSpincorrelations_Smartly();
+        Observables_.Calculate_Optical_Conductivity();
 
 
     }

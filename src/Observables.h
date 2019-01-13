@@ -26,7 +26,10 @@ public:
     void OccDensity();
     void Calculate_Akw();
     void Calculate_Nw();
+    void Calculate_SpinSpincorrelations();
+    void Calculate_SpinSpincorrelations_Smartly();
     void Calculate_IPR();
+    void Calculate_Optical_Conductivity();
     void Get_Non_Interacting_dispersion();
     double Lorentzian(double x, double brd);
     void TotalOccDensity();
@@ -162,7 +165,7 @@ void Observables::Update_OrderParameters(int iter){
                         Jinv_np1[i][j]=-1.0*alpha_n;
                     }
                     else{
-                        Jinv_np1[i][j]==0.0;
+                        Jinv_np1[i][j]=0.0;
                     }
                 }}
 
@@ -233,7 +236,7 @@ void Observables::Update_OrderParameters(int iter){
             for(int i=0;i<4*ns_;i++){
                 vec_V[i] =0.0;
                 for(int j=0;j<4*ns_;j++){
-            vec_V[i] += Jinv_n[i][j]*DeltaF_n[j];
+                    vec_V[i] += Jinv_n[i][j]*DeltaF_n[j];
                 }
             }
 
@@ -244,14 +247,14 @@ void Observables::Update_OrderParameters(int iter){
             for(int i=0;i<4*ns_;i++){
                 vec_U[i] =0.0;
                 for(int j=0;j<4*ns_;j++){
-            vec_U[i] += Delta_x_n[j]*Jinv_n[j][i];
+                    vec_U[i] += Delta_x_n[j]*Jinv_n[j][i];
                 }
             }
 
             // Get Denominator_=<Delta_x_n|vec_V>
             Denominator_=0.0;
             for(int i=0;i<4*ns_;i++){
-            Denominator_ +=Delta_x_n[i]*vec_V[i];
+                Denominator_ +=Delta_x_n[i]*vec_V[i];
             }
 
 
@@ -267,18 +270,18 @@ void Observables::Update_OrderParameters(int iter){
             Mat_2_doub Mat_Temp;
             Mat_Temp.resize(4*ns_);
             for(int i=0;i<4*ns_;i++){
-               Mat_Temp[i].resize(4*ns_);
-               for(int j=0;j<4*ns_;j++){
-                Mat_Temp[i][j] = (vec_L[i]*vec_U[j])/(Denominator_);
-               }
+                Mat_Temp[i].resize(4*ns_);
+                for(int j=0;j<4*ns_;j++){
+                    Mat_Temp[i][j] = (vec_L[i]*vec_U[j])/(Denominator_);
+                }
             }
 
 
             //Get Jinv_np1
             for(int i=0;i<4*ns_;i++){
-               for(int j=0;j<4*ns_;j++){
-               Jinv_np1[i][j]  = Jinv_n[i][j]  + Mat_Temp[i][j];
-               }
+                for(int j=0;j<4*ns_;j++){
+                    Jinv_np1[i][j]  = Jinv_n[i][j]  + Mat_Temp[i][j];
+                }
             }
 
 
@@ -361,7 +364,7 @@ void Observables::Calculate_IPR(){
     double IPR;
     int c1, site;
     double eta = 0.001;
-    int n_chosen=Parameters_.ns*Parameters_.Fill*2.0;
+    int n_chosen=(Parameters_.ns*Parameters_.Fill*2.0) - 1;
     IPR=0.0;
     for(int i=0;i<lx_;i++){
         for(int j=0;j<ly_;j++){
@@ -383,7 +386,7 @@ void Observables::Calculate_IPR(){
         }
     }
 
-    cout<<"IPR for state no. "<<Parameters_.ns*Parameters_.Fill*2.0<<" = "<<IPR<<endl;
+    cout<<"IPR for state no. "<<n_chosen<<" = "<<IPR<<endl;
 
 
 
@@ -408,6 +411,61 @@ void Observables::Calculate_IPR(){
     }
 
     cout<<"IPR for near mu(with eta = "<<eta<<") = "<<IPR<<endl;
+
+
+
+
+    string fileout_FermiState="Fermi_state_probability.txt";
+    ofstream file_FermiState_out(fileout_FermiState.c_str());
+    file_FermiState_out<<"#ix   iy   site   |Psi_{Fermi,up}(ix,iy)|^2 + |Psi_{Fermi,dn}(ix,iy)|^2"<<endl;
+
+    double value;
+    for(int i=0;i<lx_;i++){
+        for(int j=0;j<ly_;j++){
+            site=Coordinates_.Nc(i,j);
+            value = 0.0;
+
+            for(int spin=0;spin<2;spin++){
+                c1=site + spin*ns_;
+
+                value += abs(Hamiltonian_.Ham_(c1,n_chosen))*abs(Hamiltonian_.Ham_(c1,n_chosen));
+            }
+
+            file_FermiState_out<<i<<"\t"<<j<<"\t"<<site<<"\t"<<value<<endl;
+
+        }
+        file_FermiState_out<<endl;
+    }
+
+
+
+
+
+    string fileout_Near_mu="Near_mu_probability.txt";
+    ofstream file_Near_mu_out(fileout_Near_mu.c_str());
+    file_Near_mu_out<<"#ix   iy   site   sum_{n}Lorentz(near_mu)*|Psi_{n,up}(ix,iy)|^2 + |Psi_{n,dn}(ix,iy)|^2"<<endl;
+
+
+    for(int i=0;i<lx_;i++){
+        for(int j=0;j<ly_;j++){
+            site=Coordinates_.Nc(i,j);
+            value = 0.0;
+
+            for(int spin=0;spin<2;spin++){
+                c1=site + spin*ns_;
+                for(int n=0;n<Hamiltonian_.Ham_.n_row();n++){
+                    value += abs(Hamiltonian_.Ham_(c1,n))*abs(Hamiltonian_.Ham_(c1,n))*
+                            Lorentzian(Parameters_.mus - Hamiltonian_.eigs_[n], eta);;
+                }
+            }
+
+            file_Near_mu_out<<i<<"\t"<<j<<"\t"<<site<<"\t"<<value<<endl;
+
+        }
+        file_Near_mu_out<<endl;
+    }
+
+
 
 
 }
@@ -618,7 +676,7 @@ void Observables::Calculate_Nw(){
     string fileout="Nw.txt";
     double omega_min, omega_max, d_omega;
     double eta = 0.05;
-    omega_min=-100;omega_max=100.0;d_omega=0.0001;
+    omega_min=-30;omega_max=30.0;d_omega=0.01;
     //---------------------------------------------------//
 
     int omega_index_max = int( (omega_max - omega_min)/(d_omega) );
@@ -645,7 +703,563 @@ void Observables::Calculate_Nw(){
 
     file_Nw_out<<"#actual mu = "<< Parameters_.mus<<", but shifted to 0"<<endl;
 
+
+
+
+    int n_chosen=(Parameters_.ns*Parameters_.Fill*2.0) - 1;
+    cout<<"Gap = "<<Hamiltonian_.eigs_[n_chosen+1] - Hamiltonian_.eigs_[n_chosen]<<endl;
+
+    string fileout_Eigen="Eigen_spectrum.txt";
+    ofstream file_Eigen_out(fileout_Eigen.c_str());
+
+    for(int n=0;n<Hamiltonian_.Ham_.n_row();n++){
+        file_Eigen_out<<n<<"\t"<<Hamiltonian_.eigs_[n]<<endl;
+    }
+
 }
+
+
+void Observables::Calculate_Optical_Conductivity(){
+
+    string fileout_sigma_w = "Optical_conductivity.txt";
+    ofstream file_sigma_w_out(fileout_sigma_w.c_str());
+    file_sigma_w_out<<"#omega   Sigma_xx  Sigma_yy"<<endl;
+
+    //--------------------------------------------------//
+    double omega_min, omega_max, d_omega;
+    double eta = 0.05;
+    omega_min=0.00001;omega_max=10.0;d_omega=0.001;
+    //---------------------------------------------------//
+
+
+    Mat_2_doub PSI_x, PSI_y;
+    complex<double> value_x, value_y;
+    int ipx, ipy;
+
+
+
+
+    PSI_x.resize(2*ns_);
+    PSI_y.resize(2*ns_);
+    for(int n=0;n<2*ns_;n++){
+        PSI_x[n].resize(2*ns_);
+        PSI_y[n].resize(2*ns_);
+    }
+
+
+
+    for(int n=0;n<2*ns_;n++){
+        for(int m=0;m<2*ns_;m++){
+
+            value_x=zero_complex;
+            value_y=zero_complex;
+
+            for(int i=0;i<ns_;i++){
+                ipx = Coordinates_.neigh(i,0);
+                ipy = Coordinates_.neigh(i,2);
+
+
+
+                for(int spin=0;spin<2;spin++){
+                    value_x += ( conj(Hamiltonian_.Ham_(ipx + (ns_*spin),n))*Hamiltonian_.Ham_(i + (ns_*spin),m) )
+                            -  ( conj(Hamiltonian_.Ham_(i + (ns_*spin),n))*Hamiltonian_.Ham_(ipx + (ns_*spin),m) );
+
+                    value_y += ( conj(Hamiltonian_.Ham_(ipy + (ns_*spin),n))*Hamiltonian_.Ham_(i + (ns_*spin),m) )
+                            -  ( conj(Hamiltonian_.Ham_(i + (ns_*spin),n))*Hamiltonian_.Ham_(ipy + (ns_*spin),m) );
+
+                }
+
+
+            }
+
+
+            PSI_x[n][m] = abs(value_x)*abs(value_x);
+            PSI_y[n][m] = abs(value_y)*abs(value_y);
+
+
+        }
+    }
+
+
+
+
+    double sigma_x, sigma_y;
+    double omega_val;
+
+
+    int omega_index_max = int( (omega_max - omega_min)/(d_omega) );
+
+
+    //cout<<"omega_index_max = "<<omega_index_max<<endl;
+    for(int omega_ind=0;omega_ind<omega_index_max;omega_ind++){
+        omega_val = omega_min + (omega_ind*d_omega);
+
+        //cout<<omega_ind<<endl;
+
+        sigma_x=0.0; sigma_y=0.0;
+        for(int n=0;n<2*ns_;n++){
+            for(int m=0;m<2*ns_;m++){
+
+                if(n!=m){
+                    sigma_x += (PSI_x[n][m])
+                            *((1.0/( exp((Hamiltonian_.eigs_[n]-Parameters_.mus)*Parameters_.beta ) + 1.0)))
+                            *((1.0/( exp((Parameters_.mus-Hamiltonian_.eigs_[m])*Parameters_.beta ) + 1.0)))
+                            *Lorentzian( omega_min + (omega_ind*d_omega) + Hamiltonian_.eigs_[n] - Hamiltonian_.eigs_[m], eta);
+
+                    sigma_y += (PSI_y[n][m])
+                            *((1.0/( exp((Hamiltonian_.eigs_[n]-Parameters_.mus)*Parameters_.beta ) + 1.0)))
+                            *((1.0/( exp((Parameters_.mus-Hamiltonian_.eigs_[m])*Parameters_.beta ) + 1.0)))
+                            *Lorentzian( omega_min + (omega_ind*d_omega) + Hamiltonian_.eigs_[n] - Hamiltonian_.eigs_[m], eta);
+
+
+                }
+            }
+        }
+
+        sigma_x = sigma_x*PI*(1.0 - exp(-1.0*Parameters_.beta*(omega_val)))*(1.0/(omega_val*ns_));
+        sigma_y = sigma_y*PI*(1.0 - exp(-1.0*Parameters_.beta*(omega_val)))*(1.0/(omega_val*ns_));
+
+        file_sigma_w_out<<omega_val<<"     "<<sigma_x<<"     "<<sigma_y<<endl;
+
+    }
+
+
+
+
+}
+
+
+void Observables::Calculate_SpinSpincorrelations(){
+
+
+    string S2_out = "Local_S2.txt";
+    ofstream file_S2_out(S2_out.c_str());
+    file_S2_out<<"#site_i    ix   iy   S^2[site_i]"<<endl;
+
+
+    string Sq_out = "Sq.txt";
+    ofstream file_Sq_out(Sq_out.c_str());
+    file_Sq_out<<"#qx  qy   qx_index    qy_index   S(qx,qy)"<<endl;
+
+    string SSr_out = "SSr.txt";
+    ofstream file_SSr_out(SSr_out.c_str());
+    file_SSr_out<<"#site_i   site_i(x)    site_i(y)    site_j   site_j(x)    site_j(y)  SS[site_i][site_j]"<<endl;
+
+    int c_iup, c_idn, c_jup, c_jdn;
+
+    Mat_2_Complex_doub SS_nm;
+    SS_nm.resize(Hamiltonian_.Ham_.n_row());
+    for(int n=0;n<Hamiltonian_.Ham_.n_row();n++){
+        SS_nm[n].resize(Hamiltonian_.Ham_.n_row());
+    }
+
+
+    Mat_2_Complex_doub SS_ri_rj;
+    SS_ri_rj.resize(ns_);
+    for(int site_i=0;site_i<ns_;site_i++){
+        SS_ri_rj[site_i].resize(ns_);
+    }
+
+
+    for(int site_i=0;site_i<ns_;site_i++){
+        for(int site_j=0;site_j<ns_;site_j++){
+
+            c_iup=site_i;
+            c_jup=site_j;
+            c_idn=site_i + ns_;
+            c_jdn=site_j + ns_;
+
+            SS_ri_rj[site_i][site_j]=zero_complex;
+            for(int n=0;n<Hamiltonian_.Ham_.n_row();n++){
+                for(int m=0;m<Hamiltonian_.Ham_.n_row();m++){
+
+                    if(n==m){
+
+                        //SzSz*f(En)*..
+                        SS_ri_rj[site_i][site_j] +=(0.25*one_complex)*
+                                (1.0/( exp((Hamiltonian_.eigs_[n]-Parameters_.mus)*Parameters_.beta ) + 1.0))*
+                                (
+                                    (conj(Hamiltonian_.Ham_(c_iup,n))*Hamiltonian_.Ham_(c_iup,n)*
+                                     conj(Hamiltonian_.Ham_(c_jup,n))*Hamiltonian_.Ham_(c_jup,n) )
+                                    -
+                                    (conj(Hamiltonian_.Ham_(c_iup,n))*Hamiltonian_.Ham_(c_iup,n)*
+                                     conj(Hamiltonian_.Ham_(c_jdn,n))*Hamiltonian_.Ham_(c_jdn,n) )
+                                    +
+                                    (conj(Hamiltonian_.Ham_(c_idn,n))*Hamiltonian_.Ham_(c_idn,n)*
+                                     conj(Hamiltonian_.Ham_(c_jdn,n))*Hamiltonian_.Ham_(c_jdn,n) )
+                                    -
+                                    (conj(Hamiltonian_.Ham_(c_idn,n))*Hamiltonian_.Ham_(c_idn,n)*
+                                     conj(Hamiltonian_.Ham_(c_jup,n))*Hamiltonian_.Ham_(c_jup,n) )
+
+                                    );
+
+                        //0.5*(S+S- + S-S+)*f(En)*..
+                        SS_ri_rj[site_i][site_j] +=(0.5*one_complex)*
+                                (1.0/( exp((Hamiltonian_.eigs_[n]-Parameters_.mus)*Parameters_.beta ) + 1.0))*
+                                (
+                                    (conj(Hamiltonian_.Ham_(c_idn,n))*Hamiltonian_.Ham_(c_iup,n)*
+                                     conj(Hamiltonian_.Ham_(c_jup,n))*Hamiltonian_.Ham_(c_jdn,n) )
+                                    +
+                                    (conj(Hamiltonian_.Ham_(c_iup,n))*Hamiltonian_.Ham_(c_idn,n)*
+                                     conj(Hamiltonian_.Ham_(c_jdn,n))*Hamiltonian_.Ham_(c_jup,n) )
+                                    );
+
+
+
+                    }
+
+                    else{
+
+                        //SzSz*f(En)*f(Em)..
+                        SS_ri_rj[site_i][site_j] +=(0.25*one_complex)*
+                                (1.0/( exp((Hamiltonian_.eigs_[n]-Parameters_.mus)*Parameters_.beta ) + 1.0))*
+                                (1.0/( exp((Hamiltonian_.eigs_[m]-Parameters_.mus)*Parameters_.beta ) + 1.0))*
+                                (
+                                    (conj(Hamiltonian_.Ham_(c_iup,n))*Hamiltonian_.Ham_(c_iup,n)*
+                                     conj(Hamiltonian_.Ham_(c_jup,m))*Hamiltonian_.Ham_(c_jup,m) )
+                                    -
+                                    (conj(Hamiltonian_.Ham_(c_iup,n))*Hamiltonian_.Ham_(c_iup,n)*
+                                     conj(Hamiltonian_.Ham_(c_jdn,m))*Hamiltonian_.Ham_(c_jdn,m) )
+                                    +
+                                    (conj(Hamiltonian_.Ham_(c_idn,n))*Hamiltonian_.Ham_(c_idn,n)*
+                                     conj(Hamiltonian_.Ham_(c_jdn,m))*Hamiltonian_.Ham_(c_jdn,m) )
+                                    -
+                                    (conj(Hamiltonian_.Ham_(c_idn,n))*Hamiltonian_.Ham_(c_idn,n)*
+                                     conj(Hamiltonian_.Ham_(c_jup,m))*Hamiltonian_.Ham_(c_jup,m) )
+
+                                    );
+
+
+                        //SzSz*f(En)*(1.0 - f(Em))..
+                        SS_ri_rj[site_i][site_j] +=(0.25*one_complex)*
+                                (1.0/( exp((Hamiltonian_.eigs_[n]-Parameters_.mus)*Parameters_.beta ) + 1.0))*
+                                (1.0 - (1.0/( exp((Hamiltonian_.eigs_[m]-Parameters_.mus)*Parameters_.beta ) + 1.0)) )*
+                                (
+                                    (conj(Hamiltonian_.Ham_(c_iup,n))*Hamiltonian_.Ham_(c_iup,m)*
+                                     conj(Hamiltonian_.Ham_(c_jup,m))*Hamiltonian_.Ham_(c_jup,n) )
+                                    -
+                                    (conj(Hamiltonian_.Ham_(c_iup,n))*Hamiltonian_.Ham_(c_iup,m)*
+                                     conj(Hamiltonian_.Ham_(c_jdn,m))*Hamiltonian_.Ham_(c_jdn,n) )
+                                    +
+                                    (conj(Hamiltonian_.Ham_(c_idn,n))*Hamiltonian_.Ham_(c_idn,m)*
+                                     conj(Hamiltonian_.Ham_(c_jdn,m))*Hamiltonian_.Ham_(c_jdn,n) )
+                                    -
+                                    (conj(Hamiltonian_.Ham_(c_idn,n))*Hamiltonian_.Ham_(c_idn,m)*
+                                     conj(Hamiltonian_.Ham_(c_jup,m))*Hamiltonian_.Ham_(c_jup,n) )
+
+                                    );
+
+
+                        //0.5*(S+S- + S-S+)*f(En)*f(Em)..
+                        SS_ri_rj[site_i][site_j] +=(0.5*one_complex)*
+                                (1.0/( exp((Hamiltonian_.eigs_[n]-Parameters_.mus)*Parameters_.beta ) + 1.0))*
+                                (1.0/( exp((Hamiltonian_.eigs_[m]-Parameters_.mus)*Parameters_.beta ) + 1.0))*
+                                (
+                                    (conj(Hamiltonian_.Ham_(c_idn,n))*Hamiltonian_.Ham_(c_iup,n)*
+                                     conj(Hamiltonian_.Ham_(c_jup,m))*Hamiltonian_.Ham_(c_jdn,m) )
+                                    +
+                                    (conj(Hamiltonian_.Ham_(c_iup,n))*Hamiltonian_.Ham_(c_idn,n)*
+                                     conj(Hamiltonian_.Ham_(c_jdn,m))*Hamiltonian_.Ham_(c_jup,m) )
+
+                                    );
+
+                        //0.5*(S+S- + S-S+)*f(En)*(1-f(Em))..
+                        SS_ri_rj[site_i][site_j] +=(0.5*one_complex)*
+                                (1.0/( exp((Hamiltonian_.eigs_[n]-Parameters_.mus)*Parameters_.beta ) + 1.0))*
+                                ( 1.0 - (1.0/( exp((Hamiltonian_.eigs_[m]-Parameters_.mus)*Parameters_.beta ) + 1.0)) )*
+                                (
+                                    (conj(Hamiltonian_.Ham_(c_idn,n))*Hamiltonian_.Ham_(c_iup,m)*
+                                     conj(Hamiltonian_.Ham_(c_jup,m))*Hamiltonian_.Ham_(c_jdn,n) )
+                                    +
+                                    (conj(Hamiltonian_.Ham_(c_iup,n))*Hamiltonian_.Ham_(c_idn,m)*
+                                     conj(Hamiltonian_.Ham_(c_jdn,m))*Hamiltonian_.Ham_(c_jup,n) )
+
+                                    );
+
+
+                    }
+
+
+                }
+
+
+
+            }
+
+
+
+            cout<<site_i<<"\t"<<site_j<<" done"<<endl;
+        }
+
+    }
+
+
+    int site_i, site_j;
+
+    for(int ix=0;ix<lx_;ix++){
+        for(int iy=0;iy<ly_;iy++){
+            site_i=Coordinates_.Nc(ix,iy);
+
+            for(int jx=0;jx<lx_;jx++){
+                for(int jy=0;jy<ly_;jy++){
+                    site_j=Coordinates_.Nc(jx,jy);
+                    file_SSr_out<<site_i<<"\t"<<ix<<"\t"<<iy<<"\t"<<site_j<<"\t"<<
+                                  jx<<"\t"<<jy<<"\t"<<
+                                  real(SS_ri_rj[site_i][site_j])<<"\t"<<
+                                  imag(SS_ri_rj[site_i][site_j])<<endl;
+                }
+            }
+
+        }
+    }
+
+
+    double qx_, qy_;
+    complex<double> value;
+
+
+
+    for(int qx=0;qx<lx_;qx++){
+        for(int qy=0;qy<ly_;qy++){
+            value = zero_complex;
+            qx_ = (2.0*qx*PI)*(1.0/(1.0*lx_));
+            qy_ = (2.0*qy*PI)*(1.0/(1.0*ly_));
+
+            for(int ix=0;ix<lx_;ix++){
+                for(int iy=0;iy<ly_;iy++){
+                    site_i=Coordinates_.Nc(ix,iy);
+
+                    for(int jx=0;jx<lx_;jx++){
+                        for(int jy=0;jy<ly_;jy++){
+                            site_j=Coordinates_.Nc(jx,jy);
+
+                            value += one_complex*(exp(iota_complex*( (qx_*(ix - jx)) + (qy_*(iy-jy)) )))*
+                                    SS_ri_rj[site_i][site_j]*(1.0/(1.0*ns_));
+
+                        }}
+                }}
+
+            file_Sq_out<<qx_<<"\t"<<qy_<<"\t"<<qx<<"\t"<<qy<<"\t"<<real(value)<<"\t"<<imag(value)<<endl;
+
+        }
+    }
+
+
+
+    complex<double> Avg_S2=0.0;
+
+    for(int ix=0;ix<lx_;ix++){
+        for(int iy=0;iy<ly_;iy++){
+            site_i=Coordinates_.Nc(ix,iy);
+            file_S2_out<<site_i<<"\t"<<ix<<"\t"<<iy<<"\t"<<real(SS_ri_rj[site_i][site_i])
+                      <<"\t"<<imag(SS_ri_rj[site_i][site_i])<<endl;
+
+            Avg_S2 += one_complex*(SS_ri_rj[site_i][site_i]);
+        }}
+
+    cout<<"Avg Local Moment (S^2) = "<<real(Avg_S2)/(1.0*ns_)<<"\t"<<imag(Avg_S2)/(1.0*ns_)<<endl;
+
+
+
+}
+
+
+void Observables::Calculate_SpinSpincorrelations_Smartly(){
+
+
+    string S2_out = "Local_S2.txt";
+    ofstream file_S2_out(S2_out.c_str());
+    file_S2_out<<"#site_i    ix   iy   S^2[site_i]"<<endl;
+
+
+    string Sq_out = "Sq.txt";
+    ofstream file_Sq_out(Sq_out.c_str());
+    file_Sq_out<<"#qx  qy   qx_index    qy_index   S(qx,qy)"<<endl;
+
+    string SSr_out = "SSr.txt";
+    ofstream file_SSr_out(SSr_out.c_str());
+    file_SSr_out<<"#site_i   site_i(x)    site_i(y)    site_j   site_j(x)    site_j(y)  SS[site_i][site_j]"<<endl;
+
+    int c_iup, c_idn, c_jup, c_jdn;
+
+    Mat_2_Complex_doub UP_UP_Fermi, DOWN_DOWN_Fermi, UP_DOWN_Fermi, DOWN_UP_Fermi ;
+    Mat_2_Complex_doub UP_UP_1mFermi, DOWN_DOWN_1mFermi, UP_DOWN_1mFermi, DOWN_UP_1mFermi ;
+
+    UP_UP_Fermi.resize(ns_);DOWN_DOWN_Fermi.resize(ns_);UP_DOWN_Fermi.resize(ns_);DOWN_UP_Fermi.resize(ns_);
+    UP_UP_1mFermi.resize(ns_);DOWN_DOWN_1mFermi.resize(ns_);UP_DOWN_1mFermi.resize(ns_);DOWN_UP_1mFermi.resize(ns_);
+
+    for(int n=0;n<ns_;n++){
+        UP_UP_Fermi[n].resize(ns_);DOWN_DOWN_Fermi[n].resize(ns_);
+        UP_DOWN_Fermi[n].resize(ns_);DOWN_UP_Fermi[n].resize(ns_);
+
+        UP_UP_1mFermi[n].resize(ns_);DOWN_DOWN_1mFermi[n].resize(ns_);
+        UP_DOWN_1mFermi[n].resize(ns_);DOWN_UP_1mFermi[n].resize(ns_);
+    }
+
+
+    for(int i=0;i<ns_;i++){
+        for(int j=0;j<ns_;j++){
+
+            UP_UP_Fermi[i][j] = zero_complex;
+            DOWN_DOWN_Fermi[i][j] = zero_complex;
+            UP_DOWN_Fermi[i][j] = zero_complex;
+            DOWN_UP_Fermi[i][j] = zero_complex;
+
+            UP_UP_1mFermi[i][j] = zero_complex;
+            DOWN_DOWN_1mFermi[i][j] = zero_complex;
+            UP_DOWN_1mFermi[i][j] = zero_complex;
+            DOWN_UP_1mFermi[i][j] = zero_complex;
+
+
+            for(int n=0;n<2*ns_;n++){
+                UP_UP_Fermi[i][j] +=  conj(Hamiltonian_.Ham_(i,n))*Hamiltonian_.Ham_(j,n)*
+                        (1.0/( exp((Hamiltonian_.eigs_[n]-Parameters_.mus)*Parameters_.beta ) + 1.0));
+
+                DOWN_DOWN_Fermi[i][j] +=  conj(Hamiltonian_.Ham_(i+ns_,n))*Hamiltonian_.Ham_(j+ns_,n)*
+                        (1.0/( exp((Hamiltonian_.eigs_[n]-Parameters_.mus)*Parameters_.beta ) + 1.0));
+
+                UP_DOWN_Fermi[i][j] +=  conj(Hamiltonian_.Ham_(i,n))*Hamiltonian_.Ham_(j+ns_,n)*
+                        (1.0/( exp((Hamiltonian_.eigs_[n]-Parameters_.mus)*Parameters_.beta ) + 1.0));
+
+                DOWN_UP_Fermi[i][j] +=  conj(Hamiltonian_.Ham_(i+ns_,n))*Hamiltonian_.Ham_(j,n)*
+                        (1.0/( exp((Hamiltonian_.eigs_[n]-Parameters_.mus)*Parameters_.beta ) + 1.0));
+
+                UP_UP_1mFermi[i][j] +=  conj(Hamiltonian_.Ham_(i,n))*Hamiltonian_.Ham_(j,n)*
+                        ( 1.0 - (1.0/( exp((Hamiltonian_.eigs_[n]-Parameters_.mus)*Parameters_.beta ) + 1.0)));
+
+                DOWN_DOWN_1mFermi[i][j] +=  conj(Hamiltonian_.Ham_(i+ns_,n))*Hamiltonian_.Ham_(j+ns_,n)*
+                        ( 1.0 - (1.0/( exp((Hamiltonian_.eigs_[n]-Parameters_.mus)*Parameters_.beta ) + 1.0)));
+
+                UP_DOWN_1mFermi[i][j] +=  conj(Hamiltonian_.Ham_(i,n))*Hamiltonian_.Ham_(j+ns_,n)*
+                        ( 1.0 - (1.0/( exp((Hamiltonian_.eigs_[n]-Parameters_.mus)*Parameters_.beta ) + 1.0)));
+
+                DOWN_UP_1mFermi[i][j] +=  conj(Hamiltonian_.Ham_(i+ns_,n))*Hamiltonian_.Ham_(j,n)*
+                        ( 1.0 - (1.0/( exp((Hamiltonian_.eigs_[n]-Parameters_.mus)*Parameters_.beta ) + 1.0)));
+
+            }
+        }
+    }
+
+    Mat_2_Complex_doub SS_ri_rj;
+    SS_ri_rj.resize(ns_);
+    for(int site_i=0;site_i<ns_;site_i++){
+        SS_ri_rj[site_i].resize(ns_);
+    }
+
+
+    for(int i=0;i<ns_;i++){
+        for(int j=0;j<ns_;j++){
+
+            SS_ri_rj[i][j]=zero_complex;
+
+            //SzSz..
+            SS_ri_rj[i][j] +=(0.25*one_complex)*(
+
+                        (UP_UP_Fermi[i][j]*UP_UP_1mFermi[j][i])
+                        - (UP_DOWN_Fermi[i][j]*DOWN_UP_1mFermi[j][i])
+                        + (DOWN_DOWN_Fermi[i][j]*DOWN_DOWN_1mFermi[j][i])
+                        - (DOWN_UP_Fermi[i][j]*UP_DOWN_1mFermi[j][i])
+                        + (UP_UP_Fermi[i][i]*UP_UP_Fermi[j][j])
+                        - (UP_UP_Fermi[i][i]*DOWN_DOWN_Fermi[j][j])
+                        + (DOWN_DOWN_Fermi[i][i]*DOWN_DOWN_Fermi[j][j])
+                        - (DOWN_DOWN_Fermi[i][i]*UP_UP_Fermi[j][j])
+
+                        );
+
+
+            //0.5*(S+S- + S-S+)
+            SS_ri_rj[i][j] +=(0.5*one_complex)*(
+
+                        (UP_UP_Fermi[i][j]*DOWN_DOWN_1mFermi[j][i])
+                        + (DOWN_DOWN_Fermi[i][j]*UP_UP_1mFermi[j][i])
+                        + (UP_DOWN_Fermi[i][i]*DOWN_UP_Fermi[j][j])
+                        + (DOWN_UP_Fermi[i][i]*UP_DOWN_Fermi[j][j])
+
+                        );
+
+            //cout<<i<<"\t"<<j<<" done"<<endl;
+        }
+
+    }
+
+
+    int site_i, site_j;
+
+    for(int ix=0;ix<lx_;ix++){
+        for(int iy=0;iy<ly_;iy++){
+            site_i=Coordinates_.Nc(ix,iy);
+
+            for(int jx=0;jx<lx_;jx++){
+                for(int jy=0;jy<ly_;jy++){
+                    site_j=Coordinates_.Nc(jx,jy);
+                    file_SSr_out<<site_i<<"\t"<<ix<<"\t"<<iy<<"\t"<<site_j<<"\t"<<
+                                  jx<<"\t"<<jy<<"\t"<<
+                                  real(SS_ri_rj[site_i][site_j])<<"\t"<<
+                                  imag(SS_ri_rj[site_i][site_j])<<endl;
+
+
+                }
+            }
+
+        }
+    }
+
+
+    double qx_, qy_;
+    complex<double> value;
+
+
+
+    for(int qx=0;qx<lx_;qx++){
+        for(int qy=0;qy<ly_;qy++){
+            value = zero_complex;
+            qx_ = (2.0*qx*PI)*(1.0/(1.0*lx_));
+            qy_ = (2.0*qy*PI)*(1.0/(1.0*ly_));
+
+            for(int ix=0;ix<lx_;ix++){
+                for(int iy=0;iy<ly_;iy++){
+                    site_i=Coordinates_.Nc(ix,iy);
+
+                    for(int jx=0;jx<lx_;jx++){
+                        for(int jy=0;jy<ly_;jy++){
+                            site_j=Coordinates_.Nc(jx,jy);
+
+                            value += one_complex*(exp(iota_complex*( (qx_*(ix - jx)) + (qy_*(iy-jy)) )))*
+                                    SS_ri_rj[site_i][site_j]*(1.0/(1.0*ns_));
+
+                        }}
+                }}
+
+            file_Sq_out<<qx_<<"\t"<<qy_<<"\t"<<qx<<"\t"<<qy<<"\t"<<real(value)<<"\t"<<imag(value)<<endl;
+
+        }
+        file_Sq_out<<endl;
+
+    }
+
+
+
+    complex<double> Avg_S2=0.0;
+
+    for(int ix=0;ix<lx_;ix++){
+        for(int iy=0;iy<ly_;iy++){
+            site_i=Coordinates_.Nc(ix,iy);
+            file_S2_out<<site_i<<"\t"<<ix<<"\t"<<iy<<"\t"<<real(SS_ri_rj[site_i][site_i])
+                      <<"\t"<<imag(SS_ri_rj[site_i][site_i])<<endl;
+
+            Avg_S2 += one_complex*(SS_ri_rj[site_i][site_i]);
+        }
+        file_S2_out<<endl;
+    }
+
+    cout<<"Avg Local Moment (S^2) = "<<real(Avg_S2)/(1.0*ns_)<<"\t"<<imag(Avg_S2)/(1.0*ns_)<<endl;
+
+
+
+}
+
+
+
 
 void Observables::Get_Non_Interacting_dispersion(){
 
