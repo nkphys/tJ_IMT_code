@@ -3,11 +3,21 @@
 #include "MFParams.h"
 #include "Hamiltonian.h"
 #include "tensor_type.h"
+#include "functions.h"
 
 #ifndef OBSERVABLES_H
 #define OBSERVABLES_H
 
 #define PI acos(-1.0)
+
+//HERE
+//dsytri (UPLO, N, A, LDA, IPIV, WORK, INFO )
+extern "C" void  dsytri_(char *, int *, double *, int *, int *, double *, int *);
+
+
+//dsytrf(UPLO, N, A, LDA, IPIV, WORK, LWORK, INFO)
+extern "C" void  dsytrf_(char *, int *, double *, int *, int *, double *, int *, int *);
+
 
 class Observables{
 public:
@@ -42,6 +52,8 @@ public:
     void Calculate_Local_Szxy();
     void Get_OrderParameters_diffs();
     void Update_OrderParameters(int iter);
+    void Update_OrderParameters_Modified_Broyden_in_RealSpace(int iter_count);
+    void Invert_Beta();
 
     double Omega(int i);
 
@@ -59,6 +71,8 @@ public:
     vector<double> nia_,nib_,nic_;
     Matrix<double> SiSj_,dos;
     vector<double> sx_,sy_,sz_;
+
+
 
     // Declare Fields
     Matrix<double> Sz_obs, Sx_obs, Sy_obs;
@@ -79,6 +93,17 @@ public:
     Mat_2_doub Jinv_n;
     Mat_2_doub Jinv_np1;
 
+    //Declarations for Modified Broyden Method in Complex Space
+    Mat_2_doub _Delta_F;
+    Mat_2_doub _u;
+    Mat_2_doub _A;
+    Mat_1_doub _Fm, _Fm_minus1;
+    Mat_1_doub _Delta_OPm, _Delta_OPm_minus1;
+    Matrix<double> _Beta;
+    Mat_1_doub _cm, _gammam;
+    double w_minus1;
+    Mat_1_doub w;
+
 
 };
 /*
@@ -88,7 +113,34 @@ public:
 */
 
 
+void Observables::Invert_Beta(){
 
+    int n=_Beta.n_row();
+    int lda=_Beta.n_col();
+    int info;
+    vector<int> ipvt;
+    ipvt.resize(_Beta.n_col());
+    vector<double> work(n);
+    int lwork= n;
+
+
+    char uplo='U';
+    //dsytrf(UPLO, N, A, LDA, IPIV, WORK, LWORK, INFO)s
+    dsytrf_(&uplo, &n, &(_Beta(0,0)),&lda,&(ipvt[0]),&(work[0]),&lwork,&info);
+    //cout<<"FACTORIZATION OF MATRIX:"<<endl;
+    //_TEMP.print();
+
+    //dsytri (UPLO, N, A, LDA, IPIV, WORK, INFO )
+    dsytri_(&uplo, &n, &(_Beta(0,0)),&lda,&(ipvt[0]),&(work[0]),&info);
+    if (info!=0) {
+        std::cerr<<"info="<<info<<"\n";
+        perror("Inverse: dsytri failed with info!=0.\n");
+    }
+
+    //cout<<"INVERSE OF MATRIX:"<<endl;
+    //_TEMP.print();
+
+}
 
 void Observables::Get_OrderParameters_diffs(){
 
@@ -171,7 +223,7 @@ void Observables::Update_OrderParameters(int iter){
 
             //Get F_n
             for(int i=0;i<lx_;i++){
-                for(int j=0;j<lx_;j++){
+                for(int j=0;j<ly_;j++){
                     site=Coordinates_.Nc(i,j);
 
                     F_n[site]=Local_density_obs(i,j) - MFParams_.Local_density(i,j);
@@ -213,7 +265,7 @@ void Observables::Update_OrderParameters(int iter){
         else{
             //Get F_n
             for(int i=0;i<lx_;i++){
-                for(int j=0;j<lx_;j++){
+                for(int j=0;j<ly_;j++){
                     site=Coordinates_.Nc(i,j);
 
                     F_n[site]=Local_density_obs(i,j) - MFParams_.Local_density(i,j);
@@ -324,6 +376,256 @@ void Observables::Update_OrderParameters(int iter){
     }
 
 }
+
+
+
+void Observables::Update_OrderParameters_Modified_Broyden_in_RealSpace(int iter_count){
+
+    //For details see your own notes at
+    //"https://github.com/nkphys/3_ORB_SOC_Hartree_Fock/tree/master/Notes/Modified_Broyden_Method"
+
+    //*******Literature**********
+    //Modified Broyden is used from "D. D. Johnson, Phys. Rev. B 38, 12807, 1988".
+    //Look into this "https://arxiv.org/pdf/0805.4446.pdf" as well.
+    //*****************************
+
+    double alpha_OP=Parameters_.alpha_n;
+    double normalization_;
+    int site;
+    int iter;
+
+
+    iter=iter_count%Parameters_.ModBroydenCounter;
+
+
+    if(iter==0){
+        //****Getting ready for iters>0*********//
+        _Delta_F.clear();
+        _u.clear();
+        _A.clear();
+        _cm.clear();
+        _gammam.clear();
+        w_minus1=Parameters_.w_minus1;
+        w.clear();
+        //************************************//
+
+        cout<<"Using Modified Broyden Mixing to gain Self-Consistency"<<endl;
+        cout<<"alpha_OP = alpha_n = "<<alpha_OP<<"  is used"<<endl;
+
+        //Get Fm
+        for(int i=0;i<lx_;i++){
+            for(int j=0;j<ly_;j++){
+                site=Coordinates_.Nc(i,j);
+                _Fm[site]=Local_density_obs(i,j) - MFParams_.Local_density(i,j);
+                _Fm[site + ns_]=Sz_obs(i,j) - MFParams_.Sz(i,j);
+                _Fm[site + (2*ns_)]=Sx_obs(i,j) - MFParams_.Sx(i,j);
+                _Fm[site + (3*ns_)]=Sy_obs(i,j) - MFParams_.Sy(i,j);
+
+            }
+        }
+
+
+        for(int j=0;j<4*ns_;j++){
+            _Delta_OPm[j] = alpha_OP*_Fm[j];
+        }
+
+
+        for(int i=0;i<lx_;i++){
+            for(int j=0;j<ly_;j++){
+                site=Coordinates_.Nc(i,j);
+                MFParams_.Local_density(i,j) += _Delta_OPm[site];
+                MFParams_.Sz(i,j)   += _Delta_OPm[site+ (1*ns_)];
+                MFParams_.Sx(i,j)   += _Delta_OPm[site+ (2*ns_)];
+                MFParams_.Sy(i,j)   += _Delta_OPm[site+ (3*ns_)];
+            }
+        }
+
+
+        //Copy Jinv_np1 to Jinv_n
+        _Delta_OPm_minus1 = _Delta_OPm;
+
+        //Copy F_n to F_nm1
+        _Fm_minus1=_Fm;
+
+    }
+
+    else{
+
+        w.resize(iter);
+        w[iter-1]=Parameters_.wn;
+
+        //Get Fm******************//
+        for(int i=0;i<lx_;i++){
+            for(int j=0;j<ly_;j++){
+                site=Coordinates_.Nc(i,j);
+                _Fm[site]=Local_density_obs(i,j) - MFParams_.Local_density(i,j);
+                _Fm[site + ns_]=Sz_obs(i,j) - MFParams_.Sz(i,j);
+                _Fm[site + (2*ns_)]=Sx_obs(i,j) - MFParams_.Sx(i,j);
+                _Fm[site + (3*ns_)]=Sy_obs(i,j) - MFParams_.Sy(i,j);
+            }
+        }
+        //******************************//
+
+        //NEW ADDITION----------
+        //w[iter-1]=w[iter-1]*(1.0/sqrt(DOT_P(_Fm,_Fm)));
+        //------------------------------
+
+
+
+        //Get DeltaFm/|DeltaFm|-------------------------//
+        _Delta_F.resize(iter);
+        _Delta_F[iter-1].resize(4*ns_);
+
+        for(int i=0;i<4*ns_;i++){
+        _Delta_F[iter-1][i]=_Fm[i] - _Fm_minus1[i];
+        }
+
+        //Getting sqrt(<DeltaFm|DeltaFm>)
+        normalization_=0.0;
+        for(int i=0;i<4*ns_;i++){
+        normalization_ += (_Delta_F[iter-1][i]*_Delta_F[iter-1][i]);
+        }
+        normalization_=sqrt(normalization_);
+
+        for(int i=0;i<4*ns_;i++){
+        _Delta_F[iter-1][i]= _Delta_F[iter-1][i]*(1.0/normalization_);
+        }
+        //--------------------------------------------//
+
+
+        //Getting Delta_n/|DeltaFm|-------------------//
+        for(int i=0;i<4*ns_;i++){
+            _Delta_OPm_minus1[i]=_Delta_OPm_minus1[i]*(1.0/normalization_);
+        }
+        //-----------------------------------------------//
+
+
+        //Get u[iter-1]------------------------------//
+        _u.resize(iter);
+        _u[iter-1].resize(4*ns_);
+        for(int i=0;i<4*ns_;i++){
+            _u[iter-1][i] = (alpha_OP*_Delta_F[iter-1][i])  +  _Delta_OPm_minus1[i];
+        }
+        //-------------------------------------------------//
+
+
+        //UPDATE _A----------------------------//
+
+        Mat_1_doub temp_vec;
+        temp_vec.resize(iter);
+        _A.push_back(temp_vec);
+        temp_vec.clear();
+
+        for(int i=0;i<_A.size();i++){
+            _A[i].resize(iter);
+        }
+
+
+        for(int i=0;i<iter;i++){
+            if(i==(iter-1)){
+                _A[i][i]=w[i]*w[i]*DOT_P(_Delta_F[i],_Delta_F[i]);
+            }
+            else{
+                _A[iter-1][i]=w[iter-1]*w[i]*DOT_P(_Delta_F[i],_Delta_F[iter-1]);
+                _A[i][iter-1]=w[iter-1]*w[i]*DOT_P(_Delta_F[iter-1],_Delta_F[i]);
+            }
+        }
+        //---------------------------------------------//
+
+        //Get Beta--------------------------------------//
+        _Beta.resize(iter,iter);
+        for(int i=0;i<iter;i++){
+            for(int j=0;j<iter;j++){
+                if(i==j){
+                    _Beta(i,j) = (w_minus1*w_minus1) + _A[i][j];
+                }
+                else{
+                    _Beta(i,j) = _A[i][j];
+                }
+            }
+
+        }
+        /*  cout<<"Before Inversion:"<<endl;
+        Matrix<complex<double>> Beta_before;
+        Beta_before=_Beta;
+        Beta_before.print();*/
+
+        Invert_Beta();
+        for(int i=0;i<_Beta.n_col();i++){
+            for(int j=0;j<i;j++){
+                _Beta(i,j)=_Beta(j,i);
+            }
+        }
+
+        /*
+        cout<<"After Inversion:"<<endl;
+        Matrix<complex<double>> Beta_after;
+        Beta_after=_Beta;
+        Beta_after.print();
+
+        cout<<"Identity_check:"<<endl;
+        Matrix<complex<double>> Identity_check;
+        Identity_check=product(Beta_before, Beta_after);
+        Identity_check.print();
+        */
+
+        //-----------------------------------------------//
+
+        //Get _cm-------------------------------------------//
+        _cm.clear();
+        _cm.resize(iter);
+        for(int i=0;i<iter;i++){
+            _cm[i]=w[i]*DOT_P(_Delta_F[i],_Fm);
+        }
+        //---------------------------------------------------//
+
+        //Get _gammam------------------------------------------//
+        _gammam.clear();
+        _gammam.resize(iter);
+        for(int l=0;l<iter;l++){
+            _gammam[l]=0.0;
+            for(int k=0;k<iter;k++){
+                _gammam[l] += _cm[k]*_Beta(k,l);
+            }
+        }
+        //--------------------------------------------------//
+
+
+        //Get _Delta_OPm-----------------------------------------//
+        for(int i=0;i<4*ns_;i++){
+            _Delta_OPm[i]=0.0;
+            for(int n=0;n<iter;n++){
+                _Delta_OPm[i] += (-1.0)*w[n]*_gammam[n]*_u[iter-1][i];
+            }
+        }
+
+        for(int i=0;i<4*ns_;i++){
+            _Delta_OPm[i] += alpha_OP*_Fm[i];
+        }
+        //---------------------------------------------//
+
+
+        for(int i=0;i<lx_;i++){
+            for(int j=0;j<ly_;j++){
+                site=Coordinates_.Nc(i,j);
+                MFParams_.Local_density(i,j) += _Delta_OPm[site];
+                MFParams_.Sz(i,j)   += _Delta_OPm[site+ (1*ns_)];
+                MFParams_.Sx(i,j)   += _Delta_OPm[site+ (2*ns_)];
+                MFParams_.Sy(i,j)   += _Delta_OPm[site+ (3*ns_)];
+            }
+        }
+
+        //Copy Jinv_np1 to Jinv_n
+        _Delta_OPm_minus1 = _Delta_OPm;
+
+        //Copy F_n to F_nm1
+        _Fm_minus1=_Fm;
+
+    }
+
+}
+
+
 
 void Observables::Calculate_Local_Density(){
 
@@ -1321,6 +1623,12 @@ void Observables::Initialize(){
     Delta_x_n.resize(ns_*4); //Delta_x_n= x_n_in - x_nm1_in;
     Jinv_n.resize(ns_*4);
     Jinv_np1.resize(ns_*4);
+
+    _Fm.resize((ns_*4));
+    _Delta_OPm.resize((ns_*4));
+    _Fm_minus1.resize((ns_*4));
+    _Delta_OPm_minus1.resize((ns_*4));
+
 
     for(int i=0;i<ns_*4;i++){
         Jinv_n[i]. resize(ns_*4);

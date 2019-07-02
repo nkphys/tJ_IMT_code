@@ -14,6 +14,7 @@ public:
     double J_Exchange;
     double U_onsite;
     double Disorder_Strength, RandomDisorderSeed;
+    double Temperature;
 
     bool Read_OPs;
     string File_OPs_in, File_OPs_out;
@@ -22,9 +23,14 @@ public:
 
     bool Simple_Mixing;
     bool Broyden_Mixing;
+    bool Modified_Broyden_Mixing;
+    double w_minus1,wn;
+    int ModBroydenCounter;
+
+
     double alpha_n, alpha_Sz, alpha_Sx, alpha_Sy;
 
-    double temp,beta,Eav,maxmoment;
+    double beta,Eav,maxmoment;
 
     char Dflag;
 
@@ -39,7 +45,7 @@ void Parameters::Initialize(string inputfile_){
 
     t_hopping=1.0;
 
-    double Simple_Mixing_double, Broyden_Mixing_double;
+    double Simple_Mixing_double, Broyden_Mixing_double, Modified_Broyden_Mixing_double;
     double Read_OPs_double;
 
     cout << "____________________________________" << endl;
@@ -53,6 +59,7 @@ void Parameters::Initialize(string inputfile_){
     TBC_my = int(matchstring(inputfile_,"TwistedBoundaryCond_my"));
     TBC_cellsX = int(matchstring(inputfile_,"TBC_cellsX"));
     TBC_cellsY = int(matchstring(inputfile_,"TBC_cellsY"));
+    ModBroydenCounter = int(matchstring(inputfile_,"ModBroydenCounter"));
 
     ns = lx*ly;
     cout << "TotalNumberOfSites = "<< ns << endl;
@@ -72,25 +79,36 @@ void Parameters::Initialize(string inputfile_){
     alpha_Sz = matchstring(inputfile_,"alpha_Sz");
     alpha_Sx = matchstring(inputfile_,"alpha_Sx");
     alpha_Sy = matchstring(inputfile_,"alpha_Sy");
+    w_minus1 = matchstring(inputfile_,"w_minus1");
+    wn = matchstring(inputfile_,"wn");
 
 
     Dflag = 'N';
 
     Simple_Mixing_double=double(matchstring(inputfile_,"Simple_Mixing"));
     Broyden_Mixing_double=double(matchstring(inputfile_,"Broyden_Mixing"));
+    Modified_Broyden_Mixing_double=double(matchstring(inputfile_,"Modified_Broyden_Mixing"));
 
-    if(Broyden_Mixing_double==1.0){
-        Broyden_Mixing=true;
-        Simple_Mixing=false;
 
-    }
-    else if(Broyden_Mixing_double==0.0){
+    if(Modified_Broyden_Mixing_double==1.0){
+        Modified_Broyden_Mixing=true;
         Broyden_Mixing=false;
-        Simple_Mixing=true;
+        Simple_Mixing=false;
     }
     else{
-        cout<<"Broyden_Mixing should be either 0(false) or 1(true)"<<endl;
-        assert((Broyden_Mixing_double==0.0) || (Broyden_Mixing_double==1.0));
+        Modified_Broyden_Mixing=false;
+        if(Broyden_Mixing_double==1.0){
+            Broyden_Mixing=true;
+            Simple_Mixing=false;
+
+        }
+        else if(Broyden_Mixing_double==0.0){
+            Broyden_Mixing=false;
+            Simple_Mixing=true;
+            cout<<"Broyden_Mixing and Mod. Bro. Mixing, both are 0(false). So Simple mixing is used"<<endl;
+
+        }
+
     }
 
 
@@ -111,6 +129,9 @@ void Parameters::Initialize(string inputfile_){
 
     pi=4.00*atan(double(1.0));
     Eav=0.0;
+
+    Temperature=0.0001;
+    beta=(11605.0/Temperature);
 
     mus=0.25;
     cout << "____________________________________" << endl;

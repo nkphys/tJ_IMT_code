@@ -89,7 +89,7 @@ double Hamiltonian::chemicalpotential(double muin,double filling){
         }
 
         if(!converged){
-            //cout<<"mu_not_converged, N = "<<n1<<endl;
+            cout<<"mu_not_converged, N = "<<n1<<endl;
         }
         else{
             //cout<<"mu converged, N = "<<n1<<endl;
@@ -251,20 +251,27 @@ void Hamiltonian::InteractionsCreate(){
 
         // +\-x neighbour, +\-y neighbour
         for(int neigh_no=0;neigh_no<4;neigh_no++){
-            neigh_site = Coordinates_.neigh(i,neigh_no);
 
-            local_den_val=MFParams_.Local_density(Coordinates_.indx(neigh_site),Coordinates_.indy(neigh_site));
-            sz_val = MFParams_.Sz(Coordinates_.indx(neigh_site),Coordinates_.indy(neigh_site));
-            sx_val = MFParams_.Sx(Coordinates_.indx(neigh_site),Coordinates_.indy(neigh_site));
-            sy_val = MFParams_.Sy(Coordinates_.indx(neigh_site),Coordinates_.indy(neigh_site));
-            splus_val=one_complex*(sx_val) + iota_complex*(sy_val);
-            sminus_val=one_complex*(sx_val) - iota_complex*(sy_val);
+            if( (neigh_no<2 && Coordinates_.lx_!=1)
+                    ||
+                    (neigh_no>=2 && Coordinates_.ly_!=1)
+                    ){
+                neigh_site = Coordinates_.neigh(i,neigh_no);
 
-            Ham_(i,i) += (0.5*Parameters_.J_Exchange*(sz_val)) + (-0.25*Parameters_.J_Exchange*(local_den_val));
-            Ham_(i+ns_,i+ns_) += (-0.5*Parameters_.J_Exchange*(sz_val)) + (-0.25*Parameters_.J_Exchange*(local_den_val));
+                local_den_val=MFParams_.Local_density(Coordinates_.indx(neigh_site),Coordinates_.indy(neigh_site));
+                sz_val = MFParams_.Sz(Coordinates_.indx(neigh_site),Coordinates_.indy(neigh_site));
+                sx_val = MFParams_.Sx(Coordinates_.indx(neigh_site),Coordinates_.indy(neigh_site));
+                sy_val = MFParams_.Sy(Coordinates_.indx(neigh_site),Coordinates_.indy(neigh_site));
+                splus_val=one_complex*(sx_val) + iota_complex*(sy_val);
+                sminus_val=one_complex*(sx_val) - iota_complex*(sy_val);
 
-           Ham_(i,i+ns_) +=  0.5*Parameters_.J_Exchange*sminus_val;
-            Ham_(i+ns_,i) +=  0.5*Parameters_.J_Exchange*splus_val;
+                Ham_(i,i) += (0.5*Parameters_.J_Exchange*(sz_val)) + (-0.25*Parameters_.J_Exchange*(local_den_val));
+                Ham_(i+ns_,i+ns_) += (-0.5*Parameters_.J_Exchange*(sz_val)) + (-0.25*Parameters_.J_Exchange*(local_den_val));
+
+                Ham_(i,i+ns_) +=  0.5*Parameters_.J_Exchange*sminus_val;
+                Ham_(i+ns_,i) +=  0.5*Parameters_.J_Exchange*splus_val;
+            }
+
 
         }
 
@@ -373,65 +380,69 @@ void Hamiltonian::HTBCreate(){
     for(l=0;l<ns_;l++) {
 
         // * +x direction Neighbor
-        if(Coordinates_.indx(l)==(Coordinates_.lx_ -1)){
-            phasex=exp(iota_complex*2.0*(1.0*mx)*PI/(1.0*Parameters_.TBC_cellsX));
-            phasey=one_complex;
-        }
-        else{
-            phasex=one_complex;
-            phasey=one_complex;
-        }
-        m = Coordinates_.neigh(l,0);
-        for(int spin=0;spin<2;spin++) {
-
-            a = l + ns_*spin;
-            b = m + ns_*spin;
-            assert (a!=b);
-            if(a!=b){
-                HTB_(a,b)=complex<double>(1.0*Parameters_.t_hopping,0.0)*phasex;
-                HTB_(b,a)=conj(HTB_(a,b));
+        if(Coordinates_.lx_ != 1){
+            if(Coordinates_.indx(l)==(Coordinates_.lx_ -1)){
+                phasex=exp(iota_complex*2.0*(1.0*mx)*PI/(1.0*Parameters_.TBC_cellsX));
+                phasey=one_complex;
             }
+            else{
+                phasex=one_complex;
+                phasey=one_complex;
+            }
+            m = Coordinates_.neigh(l,0);
+            for(int spin=0;spin<2;spin++) {
+
+                a = l + ns_*spin;
+                b = m + ns_*spin;
+                assert (a!=b);
+                if(a!=b){
+                    HTB_(a,b)=complex<double>(1.0*Parameters_.t_hopping,0.0)*phasex;
+                    HTB_(b,a)=conj(HTB_(a,b));
+                }
 
 
+            }
         }
 
 
         // * +y direction Neighbor
-        if(Coordinates_.indy(l)==(Coordinates_.ly_ -1)){
-            phasex=one_complex;
-            phasey=exp(iota_complex*2.0*(1.0*my)*PI/(1.0*Parameters_.TBC_cellsY));
-        }
-        else{
-            phasex=one_complex;
-            phasey=one_complex;
-        }
-        m = Coordinates_.neigh(l,2);
-        for(int spin=0;spin<2;spin++) {
-
-            a = l + ns_*spin;
-            b = m + ns_*spin;
-            assert (a!=b);
-            if(a!=b){
-
-                HTB_(a,b)=complex<double>(1.0*Parameters_.t_hopping,0.0)*phasey;
-
-                HTB_(b,a)=conj(HTB_(a,b));
+        if(Coordinates_.ly_ != 1){
+            if(Coordinates_.indy(l)==(Coordinates_.ly_ -1)){
+                phasex=one_complex;
+                phasey=exp(iota_complex*2.0*(1.0*my)*PI/(1.0*Parameters_.TBC_cellsY));
             }
+            else{
+                phasex=one_complex;
+                phasey=one_complex;
+            }
+            m = Coordinates_.neigh(l,2);
+            for(int spin=0;spin<2;spin++) {
 
+                a = l + ns_*spin;
+                b = m + ns_*spin;
+                assert (a!=b);
+                if(a!=b){
+
+                    HTB_(a,b)=complex<double>(1.0*Parameters_.t_hopping,0.0)*phasey;
+
+                    HTB_(b,a)=conj(HTB_(a,b));
+                }
+
+            }
         }
 
     }
 
     //On-Site potential
     for(int i=0;i<ns_;i++) {
-    for(int spin=0;spin<2;spin++) {
-        a = i + ns_*spin;
-        HTB_(a,a)=complex<double>(1.0,0.0)*MFParams_.Disorder(Coordinates_.indx(i), Coordinates_.indy(i));
-    }
+        for(int spin=0;spin<2;spin++) {
+            a = i + ns_*spin;
+            HTB_(a,a)=complex<double>(1.0,0.0)*MFParams_.Disorder(Coordinates_.indx(i), Coordinates_.indy(i));
+        }
     }
 
 
-//HTB_.print();
+    //HTB_.print();
 } // ----------
 
 

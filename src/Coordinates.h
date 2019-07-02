@@ -112,6 +112,7 @@ int Coordinates::getneigh(int site,int wneigh){
         mx=(nx+lx_-1)%(lx_);
         my=ny;
     }
+
     if(wneigh==2){ //PY
         mx=nx;
         my=(ny+1)%(ly_);

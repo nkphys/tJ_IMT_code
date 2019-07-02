@@ -1,4 +1,8 @@
 #include <cassert>
+
+#ifndef Matrix_class
+#define Matrix_class
+
 template<typename T>
 class  Matrix  {
 public:
@@ -97,4 +101,4 @@ void Matrix<T>::print(){
     return;
 } // ----------
 
-
+#endif

@@ -50,10 +50,7 @@ void SelfConsistencyEngine::RUN_SelfConsistencyEngine(){
     double Curr_ClassicalE;
     double Prev_ClassicalE;
 
-    double temp_=0.000001;
-    cout << "Temperature = " << temp_<<" is being done"<<endl;
-    Parameters_.temp=temp_;
-    Parameters_.beta=double(11604.0/temp_);
+    cout << "Temperature = " << Parameters_.Temperature<<" is used"<<endl;
 
     int x,y,act;
 
@@ -112,15 +109,16 @@ void SelfConsistencyEngine::RUN_SelfConsistencyEngine(){
                 ){
 
 
-            Curr_ClassicalE = Hamiltonian_.GetCLEnergy();
+
             Hamiltonian_.InteractionsCreate();
-  //         Hamiltonian_.Ham_.print();
+ //          Hamiltonian_.Ham_.print();
             Hamiltonian_.Check_Hermiticity();
             Hamiltonian_.Diagonalize(Parameters_.Dflag);
             n_states_occupied_zeroT=Parameters_.ns*Parameters_.Fill*2.0;
             initial_mu_guess=0.5*(Hamiltonian_.eigs_[n_states_occupied_zeroT-1] + Hamiltonian_.eigs_[n_states_occupied_zeroT]);
             Parameters_.mus=Hamiltonian_.chemicalpotential(initial_mu_guess,Parameters_.Fill);
             Curr_QuantE = Hamiltonian_.E_QM();
+            Curr_ClassicalE = Hamiltonian_.GetCLEnergy();
 
 
             Observables_.Calculate_Local_Density();
@@ -139,7 +137,12 @@ void SelfConsistencyEngine::RUN_SelfConsistencyEngine(){
                                Parameters_.mus<<setw(17)<<
                                Curr_ClassicalE<<setw(17)<<Curr_QuantE<<endl;
 
+            if(Parameters_.Modified_Broyden_Mixing==true){
+            Observables_.Update_OrderParameters_Modified_Broyden_in_RealSpace(count);
+            }
+            else{
             Observables_.Update_OrderParameters(count);
+            }
 
 
         }
